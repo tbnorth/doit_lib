@@ -1,4 +1,5 @@
 import os
+import sys
 from functools import wraps
 
 
@@ -9,9 +10,21 @@ def one_task(**kwargs):
 
     kwards are `doit` parameters like `task_dep`, `targets`, etc.
 
+    USAGE:
+        doit -f foo.py
+          or
+        doit list -f foo.py
+        where foo.py imports and uses @one_task()
+
+    Set environent variable GRAPH_DOIT for graphviz dot output, e.g.
+        export GRAPH_DOIT=1
+        doit list -f foo.py | python doit_lib.py | dot -Tpng >tasks.png
+    NOTE:
+        PowerShell redirection turns everything into UTF-16, which dot
+        doesn't understand, so use cmd instead if using dot output
     LIMITATIONS:
         To include regular doit task_ definitions in dot output, decorate
-        them with `one_task()`.  Even then, the 'task_dep' etc. relationships
+        them with `one_task()`.  Even then, the 'file_dep' etc. relationships
         in the task_ def are not seen / reported as graph edges.
     """
     if 'active' in kwargs:
@@ -54,3 +67,38 @@ def one_task(**kwargs):
         return function_task
 
     return one_task_maker
+
+
+def _t(text):
+    if text.startswith('task_'):
+        return text[5:]
+    else:
+        return text
+
+
+def to_dot(lines):
+    """Extract dot graph from text (command line output)"""
+    graph = ['digraph "G" {']
+    chain = []
+    for line in lines:
+        line = line.strip()
+        if line.startswith("DOT:CHAIN:"):
+            name, desc = line.split(None, 1)
+            name = _t(name.replace('DOT:CHAIN:', ''))
+            chain.append(name)
+            graph.append('%s [tooltip="%s"]' % (name, desc))
+        elif line.startswith("DOT:"):
+            n0, n1 = map(_t, line.split(' -> ', 1))
+            n0 = n0.replace('DOT:', '')
+            graph.append('%s -> %s' % (n0, n1))
+    graph.append(' -> '.join(chain))
+    graph.append('}')
+    return '\n'.join(graph)
+
+
+def main():
+    sys.stdout.write(to_dot(sys.stdin))
+
+
+if __name__ == "__main__":
+    main()
